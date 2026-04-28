@@ -5,8 +5,9 @@ import concurrent.futures
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 class ProxyManager:
-    def __init__(self):
+    def __init__(self, timeout=5):
         self.proxies = []
+        self.timeout = timeout
 
     def fetch_free_proxies(self):
         """
@@ -17,13 +18,10 @@ class ProxyManager:
         url = "https://api.proxyscrape.com/v2/?request=displayproxies&protocol=http&timeout=10000&country=all&ssl=all&anonymity=all"
         try:
             response = requests.get(url, timeout=10)
-            if response.status_code == 200:
-                raw_proxies = response.text.strip().split('\r\n')
-                self.proxies = [p for p in raw_proxies if p]
-                logging.info(f"Fetched {len(self.proxies)} proxies.")
-            else:
-                logging.error(f"Failed to fetch proxies. Status code: {response.status_code}")
-        except Exception as e:
+            response.raise_for_status()
+            self.proxies = [p.strip() for p in response.text.splitlines() if p.strip()]
+            logging.info(f"Fetched {len(self.proxies)} proxies.")
+        except requests.RequestException as e:
             logging.error(f"Error fetching proxies: {e}")
 
     def check_proxy(self, proxy):
@@ -36,16 +34,21 @@ class ProxyManager:
             "https": f"http://{proxy}"
         }
         try:
-            response = requests.get(url, proxies=proxies, timeout=5)
+            response = requests.get(url, proxies=proxies, timeout=self.timeout)
             if response.status_code == 200:
                 return proxy
-        except:
-            return None
+        except requests.RequestException:
+            pass
+        return None
 
     def get_working_proxies(self, limit=5):
         """
         Returns a list of working proxies.
         """
+        if limit <= 0:
+            logging.info("Proxy validation skipped because the requested proxy limit is 0.")
+            return []
+
         if not self.proxies:
             self.fetch_free_proxies()
 

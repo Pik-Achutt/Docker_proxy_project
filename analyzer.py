@@ -2,6 +2,7 @@ import os
 import argparse
 import logging
 import json
+from pathlib import Path
 from proxy_manager import ProxyManager
 from dynamic_analysis import DynamicAnalyzer
 
@@ -39,7 +40,11 @@ def analyze_traffic_file(mitm_file):
         
     return found
 
-def main(apk_path, max_proxies=2):
+def main(apk_path, max_proxies=2, output_dir="artifacts"):
+    apk_path = Path(apk_path)
+    if not apk_path.exists():
+        raise FileNotFoundError(f"APK not found: {apk_path}")
+
     logging.info(f"Starting AAMT Analysis on {apk_path}")
     
     # 1. Get Proxies
@@ -51,29 +56,32 @@ def main(apk_path, max_proxies=2):
         proxies = [None]
         
     # 3. Dynamic Analysis per Proxy
-    da = DynamicAnalyzer()
+    da = DynamicAnalyzer(output_dir=output_dir)
     dynamic_results = {}
     
     for proxy in proxies:
         if proxy:
             logging.info(f"Running dynamic analysis through proxy: {proxy}")
-            report_file = da.run_analysis(apk_path, proxy)
-            
-            # Analyze the captured traffic
-            suspicious = analyze_traffic_file(report_file)
-            dynamic_results[proxy] = suspicious
+            result_key = proxy
         else:
-            # Run without proxy
-            logging.info("Running dynamic analysis locally (no proxy)")
-            # You could implement a direct no-proxy run in DynamicAnalyzer
-            pass
+            logging.info("Running dynamic analysis locally without an upstream proxy")
+            result_key = "noproxy"
+
+        report_file = da.run_analysis(apk_path, proxy)
+        suspicious = analyze_traffic_file(report_file)
+        dynamic_results[result_key] = {
+            "traffic_file": report_file,
+            "suspicious_urls": suspicious,
+        }
             
     # 3. Generate Final Report
     report = {
+        'apk': str(apk_path),
         'dynamic_analysis': dynamic_results
     }
     
-    report_path = "aamt_report.json"
+    Path(output_dir).mkdir(parents=True, exist_ok=True)
+    report_path = Path(output_dir) / "aamt_report.json"
     with open(report_path, "w") as f:
         json.dump(report, f, indent=4)
         
@@ -84,6 +92,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Android Automated Malware Analysis Tool")
     parser.add_argument("apk_path", help="Path to the APK file")
     parser.add_argument("--proxies", type=int, default=2, help="Number of proxies to test against")
+    parser.add_argument("--output-dir", default="artifacts", help="Directory for reports, traffic dumps, and screenshots")
     args = parser.parse_args()
     
-    main(args.apk_path, args.proxies)
+    main(args.apk_path, args.proxies, args.output_dir)

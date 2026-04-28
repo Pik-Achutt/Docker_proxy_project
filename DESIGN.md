@@ -12,7 +12,7 @@ The tool is split into three core modules that operate sequentially to spin up i
    - Acts as the main entry point (`main()`).
    - Handles CLI arguments and determines how many proxies to test.
    - Glues together the Proxy Manager and the Dynamic Analyzer.
-   - Generates the final execution report (`aamt_report.json`).
+   - Generates the final execution report (`artifacts/aamt_report.json` by default).
 
 2. **`proxy_manager.py` (Proxy Rotator)**
    - Responsible for scraping free proxies from public endpoints (`proxyscrape`).
@@ -29,11 +29,11 @@ The tool is split into three core modules that operate sequentially to spin up i
 When `analyzer.py` is invoked with a target APK, the execution lifecycle follows these distinct phases:
 
 ### Phase 1: Proxy Resolution
-The `ProxyManager` scrapes a list of HTTP proxies and tests them concurrently until it secures the requested number of working proxies (default: 2). If no proxies are found or a proxy timeout occurs, the system gracefully falls back to local execution (`noproxy`).
+The `ProxyManager` scrapes a list of HTTP proxies and tests them concurrently until it secures the requested number of working proxies (default: 2). If no proxies are requested, no proxies are found, or proxy validation times out, the system runs with the `noproxy` profile. This still routes emulator traffic through local `mitmproxy`; it simply avoids an upstream public proxy.
 
 ### Phase 2: Infrastructure Spin-Up
 For the selected proxy:
-1. `mitmdump` is spawned locally, listening on port `8080`, and configured to forward traffic to the upstream proxy. Traffic is actively dumped to a `.mitm` file.
+1. `mitmdump` is spawned locally, listening on port `8080`, and optionally configured to forward traffic to the upstream proxy. Traffic is actively dumped to an `artifacts/traffic_report_<proxy>.mitm` file.
 2. The `docker-android:api-33` container is started using Docker Python SDK. It explicitly binds `/dev/kvm` for hardware acceleration.
 3. The engine polls the container via `adb connect` and waits for `sys.boot_completed == 1`.
 
@@ -45,7 +45,7 @@ For the selected proxy:
 
 ### Phase 4: Dynamic Interaction & Artifact Harvesting
 1. **Monkey Testing:** An `adb shell monkey` command is spawned asynchronously to simulate 200 random user actions on the target package. This mimics user behavior to trigger delayed malware execution.
-2. **Visual Harvesting:** While the monkey test runs, a polling loop executes `adb shell screencap`, taking periodic snapshots of the application UI. These are pulled to the host and stored in an APK-specific directory.
+2. **Visual Harvesting:** While the monkey test runs, a polling loop executes `adb shell screencap`, taking periodic snapshots of the application UI. These are pulled to the host and stored in `artifacts/<apk_name>/<proxy>/`.
 
 ### Phase 5: Teardown
 1. The Docker container is forcefully stopped and removed.
