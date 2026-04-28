@@ -68,7 +68,7 @@ class DynamicAnalyzer:
                 self.container.reload()
                 if self.container.status != 'running':
                     logging.error("Emulator container stopped unexpectedly.")
-                    return
+                    return False
                 res = subprocess.run(["adb", "connect", "127.0.0.1:5555"], capture_output=True, text=True)
                 if "connected" in res.stdout or "already connected" in res.stdout:
                     logging.info("ADB connected successfully.")
@@ -77,7 +77,7 @@ class DynamicAnalyzer:
                 time.sleep(5)
             else:
                 logging.error("Failed to connect to ADB.")
-                return
+                return False
             
             # Wait for boot completion
             max_boot_retries = 60
@@ -85,7 +85,7 @@ class DynamicAnalyzer:
                 self.container.reload()
                 if self.container.status != 'running':
                     logging.error("Emulator container stopped unexpectedly during boot.")
-                    return
+                    return False
                 res = subprocess.run(["adb", "-s", "127.0.0.1:5555", "shell", "getprop", "sys.boot_completed"], capture_output=True, text=True)
                 if "1" in res.stdout:
                     logging.info("Emulator boot completed.")
@@ -93,10 +93,13 @@ class DynamicAnalyzer:
                 time.sleep(5)
             else:
                 logging.error("Emulator failed to finish booting in time.")
-                return
+                return False
                 
         except Exception as e:
             logging.error(f"Failed to start emulator: {e}")
+            return False
+            
+        return True
 
     def stop_emulator(self):
         if self.container:
@@ -108,7 +111,10 @@ class DynamicAnalyzer:
     def run_analysis(self, apk_path, upstream_proxy):
         report_file = f"traffic_report_{upstream_proxy.replace(':', '_')}.mitm"
         self.start_mitmproxy(upstream_proxy, report_file)
-        self.start_emulator()
+        if not self.start_emulator():
+            logging.error("Aborting analysis due to emulator failure.")
+            self.stop_mitmproxy()
+            return report_file
         
         try:
             # Set proxy on device to host machine's mitmproxy
