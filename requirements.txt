@@ -1,0 +1,5 @@
+androguard
+docker
+mitmproxy
+requests
+yara-python
